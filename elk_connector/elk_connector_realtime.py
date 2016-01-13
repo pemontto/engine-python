@@ -18,30 +18,30 @@
 ############################################################################
 """
 This script reads log records from logstash indexes in elasticsearch
-and uploads them to the Prelert Engine. Logs are read in real-time 
+and uploads them to the Prelert Engine. Logs are read in real-time
 by default the last 60 seconds of logs are read every 60 seconds, this
 can be changed by setting the '--update-interval' argument.
 
-The program takes a number of optional arguments for the Engine 
-API and elasticsearch connection settings the only required argument 
-is the path to a config file containing the Engine Job configuration 
-and the elasticsearch query. If a job id is provided then the logs 
-are sent to that job else a new job is created. 
+The program takes a number of optional arguments for the Engine
+API and elasticsearch connection settings the only required argument
+is the path to a config file containing the Engine Job configuration
+and the elasticsearch query. If a job id is provided then the logs
+are sent to that job else a new job is created.
 
-The script attempts to add a date range filter for the real-time date 
-arguments to the elasticsearch query defined in the config file, if it 
+The script attempts to add a date range filter for the real-time date
+arguments to the elasticsearch query defined in the config file, if it
 cannot because 'filter' and 'post_filter' are already defined then
-it raises an error. 
+it raises an error.
 
 The program will indefinitely, interrupt it with Ctrl C and the
-script will close the API analytics Job and exit gracefully. 
+script will close the API analytics Job and exit gracefully.
 
 See:
     python elk_connector_realtime.py --help
 
-Example:  
+Example:
     python elk_connector_realtime.py --es-host=elasticsearchserver
-        --api-host=prelertserver --job-id=jobid configs/syslog.json 
+        --api-host=prelertserver --job-id=jobid configs/syslog.json
 """
 
 import argparse
@@ -79,13 +79,13 @@ class UTC(tzinfo):
     """
     UTC timezone class
     """
- 
+
     def utcoffset(self, dt):
         return timedelta(0)
- 
+
     def tzname(self, dt):
         return "UTC"
- 
+
     def dst(self, dt):
         return timedelta(0)
 
@@ -93,30 +93,30 @@ class UTC(tzinfo):
 def setupLogging():
     """
     Log to console
-    """    
+    """
     logging.basicConfig(level=logging.WARN,format='%(asctime)s %(levelname)s %(message)s')
 
 def parseArguments():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("file", 
+    parser.add_argument("file",
                 help="Read the configuration from the specified file")
     parser.add_argument("--es-host", help="The host machine Elasticsearch is \
         running on, defaults to '" + ES_HOST + "'", default=ES_HOST, dest="es_host")
-    parser.add_argument("--es-port", help="The Elasticsearch HTTP port, defaults to " 
+    parser.add_argument("--es-port", help="The Elasticsearch HTTP port, defaults to "
         + str(ES_PORT), default=ES_PORT, dest="es_port")
     parser.add_argument("--api-host", help="The Prelert Engine API host, defaults to "
-        + API_HOST, default=API_HOST, dest="api_host")    
-    parser.add_argument("--api-port", help="The Prelert Engine API port, defaults to " 
+        + API_HOST, default=API_HOST, dest="api_host")
+    parser.add_argument("--api-port", help="The Prelert Engine API port, defaults to "
         + str(API_PORT), default=API_PORT, dest="api_port")
     parser.add_argument("--job-id", help="Send data to this job. If not set a \
-        new job will be created.", default=None, dest="job_id")    
+        new job will be created.", default=None, dest="job_id")
     parser.add_argument("--update-interval", help="The period between each \
         each cycle of querying and uploading data", type=int,
         default=UPDATE_INTERVAL, dest="update_interval")
 
 
-    return parser.parse_args()   
+    return parser.parse_args()
 
 def elasticSearchDocsToDicts(hits):
     """
@@ -127,7 +127,7 @@ def elasticSearchDocsToDicts(hits):
 
     objs = []
     for hit in hits:
-        objs.append(hit['_source']) 
+        objs.append(hit['_source'])
 
     return objs
 
@@ -148,9 +148,9 @@ def logstashIndex(date, update_interval):
 
 def insertDateRangeFilter(query):
     """
-    Add a date range filter on the '@timestamp' field either as 
+    Add a date range filter on the '@timestamp' field either as
     a 'filter' or 'post_filter'. If both 'filter' and 'post_filter'
-    are already defined then an RuntimeError is raised as the 
+    are already defined then an RuntimeError is raised as the
     date filter cannot be inserted into the query.
 
     The date range filter will look like either
@@ -162,14 +162,14 @@ def insertDateRangeFilter(query):
         "post_filter" : {"range" : { "@timestamp" : { "gte" : "start-date",
             "lt" : "end-date"} } }
 
-    where 'start-date' and 'end-date' literals will be replaced by 
-    the actual timestamps in the query. 
+    where 'start-date' and 'end-date' literals will be replaced by
+    the actual timestamps in the query.
     """
 
     dates = {'gte' : 'start-date', 'lt' : 'end-date'}
     timestamp = {'@timestamp' : dates}
     range_ = {'range' : timestamp}
-    
+
     if not 'filter' in query:
         query['filter'] = range_
     elif not 'post_filter' in query:
@@ -208,7 +208,7 @@ def main():
     except IOError:
         print "Error opening file " + args.file
         return
-  
+
 
     # The ElasticSearch client
     es_client = Elasticsearch(args.es_host + ":" + str(args.es_port))
@@ -219,51 +219,51 @@ def main():
     job_id = args.job_id
     if job_id == None:
         (http_status, response) = engine_client.createJob(json.dumps(config['job_config']))
-        job_id = response['id']  
+        job_id = response['id']
         print "Created job with id " + str(job_id)
 
     print "Using job id " + job_id
 
     data_type = config['type']
     raw_query = insertDateRangeFilter(config['search'])
-    
+
 
     timezone = UTC()
-    doc_count = 0    
+    doc_count = 0
     try:
         query_end_time = datetime.now(timezone) - timedelta(seconds=args.update_interval)
         while True:
             query_start_time = query_end_time
             query_end_time = datetime.now(timezone)
-            query_str = json.dumps(replaceDateArgs(raw_query, query_start_time, 
-                query_end_time)) 
+            query_str = json.dumps(replaceDateArgs(raw_query, query_start_time,
+                query_end_time))
             index_name = logstashIndex(query_start_time, args.update_interval)
 
             skip = 0
             try:
                 # Query the documents from ElasticSearch and write to the Engine
-                hits = es_client.search(index=index_name, doc_type=data_type, 
+                hits = es_client.search(index=index_name, doc_type=data_type,
                     body=query_str, from_=skip, size=MAX_DOC_TAKE)
             except elasticsearch.exceptions.NotFoundError:
                 print "Error: missing logstash index '" + index_name + "'"
-                
+
 
             # upload to the API
-            content = json.dumps(elasticSearchDocsToDicts(hits['hits']['hits'])) 
-            
+            content = json.dumps(elasticSearchDocsToDicts(hits['hits']['hits']))
+
             (http_status, response) = engine_client.upload(job_id, content)
             if http_status != 202:
                 print "Error uploading log content to the Engine"
                 print http_status, json.dumps(response)
-                
 
-            doc_count += len(hits['hits']['hits'])                 
+
+            doc_count += len(hits['hits']['hits'])
 
             # get any other docs
             hitcount = int(hits['hits']['total'])
-            while hitcount > (skip + MAX_DOC_TAKE):    
+            while hitcount > (skip + MAX_DOC_TAKE):
                 skip += MAX_DOC_TAKE
-                hits = es_client.search(index=index_name, doc_type=data_type, 
+                hits = es_client.search(index=index_name, doc_type=data_type,
                     body=query_str, from_=skip, size=MAX_DOC_TAKE)
 
                 content = json.dumps(elasticSearchDocsToDicts(hits['hits']['hits']))
@@ -272,9 +272,9 @@ def main():
                 if http_status != 202:
                     print "Error uploading log content to the Engine"
                     print json.dumps(response)
-                    
 
-                doc_count += len(hits['hits']['hits']) 
+
+                doc_count += len(hits['hits']['hits'])
 
             print "Uploaded {0} records".format(str(doc_count))
 
@@ -282,18 +282,17 @@ def main():
             sleep_time = max(args.update_interval - duration.seconds, 0)
             print "sleeping for " + str(sleep_time) + " seconds"
 
-            if sleep_time > 0.0:                
+            if sleep_time > 0.0:
                 time.sleep(sleep_time)
 
-  
+
     except KeyboardInterrupt:
         print "Interrupt caught closing job..."
 
-    
+
 
     engine_client.close(job_id)
 
 
 if __name__ == "__main__":
-    main()    
-
+    main()
