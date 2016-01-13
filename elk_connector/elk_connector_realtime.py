@@ -131,14 +131,19 @@ def elasticSearchDocsToDicts(hits):
 
     return objs
 
-def logstashIndex(date):
+def logstashIndex(date, update_interval):
     """
     Return the logstash index name for the given date
 
     Logstash index names are in the format: 'logstash-YYYY.MM.DD'
     """
-
-    return "logstash-" + date.strftime("%Y.%m.%d")
+    s_since_midnight = (date - date.replace(hour=0, minute=0, second=0,
+                        microsecond=0)).total_seconds()
+    if s_since_midnight < update_interval:
+        previous_day = (date - timedelta(seconds=update_interval)).strftime("%Y.%m.%d")
+        return "logstash-%s,logstash-%s" % (previous_day, date.strftime("%Y.%m.%d"))
+    else:
+        return "logstash-%s" % date.strftime("%Y.%m.%d")
 
 
 def insertDateRangeFilter(query):
@@ -232,7 +237,7 @@ def main():
             query_end_time = datetime.now(timezone)
             query_str = json.dumps(replaceDateArgs(raw_query, query_start_time, 
                 query_end_time)) 
-            index_name = logstashIndex(query_start_time)        
+            index_name = logstashIndex(query_start_time, args.update_interval)
 
             skip = 0
             try:
